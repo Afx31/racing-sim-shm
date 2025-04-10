@@ -4,12 +4,11 @@ import (
 	// "bytes"
 	"encoding/binary"
 	"fmt"
-
-	// "net"
+	"math"
+	"net"
 
 	// "os"
 	"sync"
-	"time"
 	"unsafe"
 
 	"udp-bridge/internal/accshmdata"
@@ -21,7 +20,7 @@ const (
 	shmNamePhysics    = "Local\\acpmf_physics"
 	shmNameGraphics		= "Local\\acpmf_graphics"
 	shmNameStatic			= "Local\\acpmf_static"
-	SERVER_UDP_ADDR 	= "<localIp>:1234"
+	SERVER_UDP_ADDR 	= ""
 )
 
 var (
@@ -31,11 +30,11 @@ var (
 func ReadSharedMemory(physics *accshmdata.ACCPhysics) {
 	fmt.Println("--- Reading Memory ---")
 	
-	ticker := time.NewTicker(1 * time.Second)
-	defer ticker.Stop()
+	// ticker := time.NewTicker(1 * time.Second)
+	// defer ticker.Stop()
 
 	for {
-		<-ticker.C
+		// <-ticker.C
 		physicsSize := (int32)(unsafe.Sizeof(*physics))
 		
 		// Open shared memory (shm reader)
@@ -82,40 +81,49 @@ func ReadSharedMemory(physics *accshmdata.ACCPhysics) {
 }
 
 func SendDataViaUdp(physics *accshmdata.ACCPhysics) {
-	ticker := time.NewTicker(2 * time.Second)
-	defer ticker.Stop()
-
-	for {
-		<-ticker.C
-
-		fmt.Println("RPM: ", physics.RPM)
-		fmt.Println("Gear: ", physics.Gear)
-		fmt.Println("Brake: ", physics.Brake)
-		fmt.Println("Speed: ", physics.SpeedKmh)
-		fmt.Println("--------------------")	
+	conn, err := net.Dial("udp", SERVER_UDP_ADDR)
+	if err != nil {
+		fmt.Println("[ERROR] - Connecting to UDP Server: ", err)
 	}
-	// conn, err := net.Dial("udp", SERVER_UDP_ADDR)
-	// if err != nil {
-	// 	fmt.Println("[ERROR] - Connecting to UDP Server: ", err)
-	// }
-	// defer conn.Close()
+	defer conn.Close()
 
-	// b := make([]byte, 1024)
+	// ticker := time.NewTicker(1 * time.Second)
+	// defer ticker.Stop()
+	counter := 0
+	for {
+		// <-ticker.C
+		b := make([]byte, 30)
 
-	// for {
-	// 	_, err = conn.Write(b)
-	// 	if err != nil {
-	// 		fmt.Println("[ERROR] - Writing to UDP Server: ", err)
-	// 	}
-	// }
+		// fmt.Println("-------------------------------------------------")
+		// fmt.Println(counter)
+		binary.LittleEndian.PutUint32(b[0:4], uint32(physics.PacketId))
+		// fmt.Println("PacketId: ", physics.PacketId)
+		binary.LittleEndian.PutUint32(b[4:8], uint32(physics.RPM))
+		// fmt.Println("RPM: ", physics.RPM)
+		binary.LittleEndian.PutUint32(b[8:12], math.Float32bits(physics.SpeedKmh))
+		// fmt.Println("SpeedKmh: ", physics.SpeedKmh)
+		binary.LittleEndian.PutUint32(b[12:16], uint32(physics.Gear))
+		// fmt.Println("Gear: ", physics.Gear)
+		binary.LittleEndian.PutUint32(b[16:20], math.Float32bits(physics.Gas * 100))
+		// fmt.Println("Gas: ", physics.Gas)
+		
+
+		_, err = conn.Write(b)
+		if err != nil {
+			fmt.Println("[ERROR] - Writing to UDP Server: ", err)
+		}
+
+
+		counter++
+	}
 }
 
 func main() {
 	fmt.Println("----- Running -----")
 
 	physics := new(accshmdata.ACCPhysics)
-	ticker := time.NewTicker(1 * time.Second)
-	defer ticker.Stop()
+	// ticker := time.NewTicker(1 * time.Second)
+	// defer ticker.Stop()
 
 
 	// Reading will fail, if the game has not been started at least once
