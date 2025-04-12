@@ -8,8 +8,7 @@ import (
 	"math"
 	"net"
 	"sync"
-
-	// "time"
+	"time"
 
 	"udp-to-can/internal/hondata"
 
@@ -19,7 +18,7 @@ import (
 
 const (
 	udpAddress = ""
-	SETTINGS_TICKER = 100
+	SETTINGS_HERTZ = 250
 )
 
 var (
@@ -67,15 +66,14 @@ func SendDataToCan() {
 	}
 	defer conn.Close()
 
+	ticker := time.NewTicker(time.Second / time.Duration(SETTINGS_HERTZ))
+	defer ticker.Stop()
+
 	tx := socketcan.NewTransmitter(conn)
-
-	// ticker := time.NewTicker(SETTINGS_TICKER * time.Millisecond)
-	// defer ticker.Stop()
-
 	counter := 0
 
 	for {
-		// <-ticker.C
+		<-ticker.C
 		switch (counter) {
 		case 0:
 			f660 := can.Frame {
