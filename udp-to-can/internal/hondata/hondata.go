@@ -41,8 +41,8 @@ type Frame666 struct {
 type Frame667 struct {
 	OilTemp			uint16
 	OilPressure	uint16
-	//Analog2			uint16
-	//Analog3			uint16
+	Analog2			uint16
+	Analog3			uint16
 }
 
 // type Frame668 struct {
