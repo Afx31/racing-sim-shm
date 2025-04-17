@@ -17,14 +17,16 @@ import (
 )
 
 const (
-	udpAddress = ""
-	SETTINGS_HERTZ = 250
+	udpAddress 			= ""
+	SETTINGS_HERTZ 	= 250
+	PACKET_LENGTH		= 90
 )
 
 var (
 	wg sync.WaitGroup
 	frame660 = hondata.Frame660{}
 	frame662 = hondata.Frame662{}
+	frame667 = hondata.Frame667{}
 )
 
 func ReadDataFromUdp() {
@@ -34,7 +36,7 @@ func ReadDataFromUdp() {
 	}
 	defer conn.Close()
 
-	b := make([]byte, 30)
+	b := make([]byte, PACKET_LENGTH)
 	counter := 0
 
 	for {
@@ -48,12 +50,15 @@ func ReadDataFromUdp() {
 		speed := math.Float32frombits(binary.LittleEndian.Uint32(b[8:12]))
 		gear := binary.LittleEndian.Uint32(b[12:16])
 		tps := math.Float32frombits(binary.LittleEndian.Uint32(b[16:20]))
+		brake := math.Float32frombits(binary.LittleEndian.Uint32(b[20:24]))
 
 		frame660.Rpm = uint16(rpm)
 		frame660.Speed = uint16(speed)
 		frame660.Gear = uint8(gear)
 
 		frame662.Tps = uint16(tps)
+
+		frame667.Analog2 = uint16(brake)
 		
 		counter++
 	}
@@ -98,9 +103,21 @@ func SendDataToCan() {
 
 			_ = tx.TransmitFrame(context.Background(), f662)
 				// fmt.Println("Sent 662: ", f662)
+
+		// TODO: Temp 667 in position 3 for now, just testing brake
+		case 3:
+			f667 := can.Frame {
+				ID: 667,
+				Length: 8,
+				Data: [8]byte { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 },
+			}
+			binary.BigEndian.PutUint16(f667.Data[4:6], frame667.Analog2)
+
+			_ = tx.TransmitFrame(context.Background(), f667)
+			// fmt.Println("Sent 667: ", f667)
 		}
 		
-		if (counter == 2) {
+		if (counter == 3) {
 			counter = 0
 		} else {
 			counter++
