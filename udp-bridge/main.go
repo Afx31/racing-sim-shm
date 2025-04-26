@@ -24,16 +24,28 @@ const (
 
 var (
 	wg sync.WaitGroup
+	physics = new(accshmdata.ACCPhysics)
+	graphics = new(accshmdata.ACCGraphics)
 )
 
-func ReadSharedMemory(physics *accshmdata.ACCPhysics) {
+func ReadSharedMemory[T any](accShm *T,) {
 	fmt.Println("--- Reading Memory ---")
 	
 	for {
-		physicsSize := (int32)(unsafe.Sizeof(*physics))
+		accShmSize := (int32)(unsafe.Sizeof(*accShm))
+		
+		var s string
+		switch any(accShm).(type) {
+		case *accshmdata.ACCPhysics:
+			s = shmNamePhysics
+		case  *accshmdata.ACCGraphics:
+			s = shmNameGraphics
+		case  *accshmdata.ACCStatic:
+			s = shmNameStatic
+		}
 		
 		// Open shared memory (shm reader)
-		r, err := shm.Open(shmNamePhysics, physicsSize)
+		r, err := shm.Open(s, accShmSize)
 		if err != nil {
 			fmt.Println("[ERROR] - Trying to open shm ", err)
 		}
@@ -45,7 +57,7 @@ func ReadSharedMemory(physics *accshmdata.ACCPhysics) {
 
 		// ---- Solution 1
 		// Read the opened shared memory into a raw buffer
-		// rbuf := make([]byte, physicsSize)
+		// rbuf := make([]byte, accShmSize)
 		// _, err = r.Read(rbuf)
 		// if err != nil {
 		// 	fmt.Println("[ERROR] - Trying to read shm ", err)
@@ -54,19 +66,18 @@ func ReadSharedMemory(physics *accshmdata.ACCPhysics) {
 		// Convert into a buffer wrapper for to decode into the struct
 		// buf := &bytes.Buffer{}
 		// buf.Write(rbuf)
-		// err = binary.Read(buf, binary.LittleEndian, physics)
+		// err = binary.Read(buf, binary.LittleEndian, accShm)
 		// if err != nil {
 		// 	fmt.Println("[ERROR] - Trying to write shm ", err)
 		// }
 
 		// ---- Solution 2
-		err = binary.Read(r, binary.LittleEndian, physics)
+		err = binary.Read(r, binary.LittleEndian, accShm)
 		if err != nil {
 			fmt.Println("[ERROR] - Trying to write shm ", err)
 		}
 
 		// ----------------------------------------------------------------
-		
 
 		err = r.Close()
 		if err != nil {
@@ -87,7 +98,8 @@ func SendDataViaUdp(physics *accshmdata.ACCPhysics) {
 	for {
 		b := make([]byte, PACKET_LENGTH)
 
-		binary.LittleEndian.PutUint32(b[0:4], uint32(physics.PacketId))
+		//binary.LittleEndian.PutUint32(b[0:4], uint32(physics.PacketId))
+		binary.LittleEndian.PutUint32(b[0:4], 1)
 		binary.LittleEndian.PutUint32(b[4:8], uint32(physics.RPM))
 		binary.LittleEndian.PutUint32(b[8:12], math.Float32bits(physics.SpeedKmh))
 		binary.LittleEndian.PutUint32(b[12:16], uint32(physics.Gear))
@@ -103,10 +115,33 @@ func SendDataViaUdp(physics *accshmdata.ACCPhysics) {
 	}
 }
 
+func SendGraphicsDataViaUdp(graphics *accshmdata.ACCGraphics) {
+	conn, err := net.Dial("udp", SERVER_UDP_ADDR)
+	if err != nil {
+		fmt.Println("[ERROR] - Connecting to UDP Server: ", err)
+	}
+	defer conn.Close()
+
+	counter := 0
+
+	for {
+		b := make([]byte, PACKET_LENGTH)
+
+		//binary.LittleEndian.PutUint32(b[0:4], uint32(graphics.PacketId))\
+		binary.LittleEndian.PutUint32(b[0:4], 2)
+		binary.LittleEndian.PutUint32(b[4:8], uint32(graphics.CompletedLaps))
+
+		_, err = conn.Write(b)
+		if err != nil {
+			fmt.Println("[ERROR] - Writing to UDP Server: ", err)
+		}
+    
+		counter++
+	}
+}
+
 func main() {
 	fmt.Println("----- Running -----")
-
-	physics := new(accshmdata.ACCPhysics)
 
 	wg.Add(1)
 	go func() {
@@ -117,8 +152,21 @@ func main() {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
+		ReadSharedMemory(graphics)
+	}()
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
 		SendDataViaUdp(physics)
 	}()
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		SendGraphicsDataViaUdp(graphics)
+	}()
+
 
 	wg.Wait()
 }
