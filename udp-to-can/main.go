@@ -24,10 +24,21 @@ const (
 
 var (
 	wg sync.WaitGroup
+	gpsState = GpsState{}
 	frame660 = hondata.Frame660{}
 	frame662 = hondata.Frame662{}
 	frame667 = hondata.Frame667{}
 )
+
+type GpsState struct {
+	LapCount							uint8
+	Latitude							float64
+	Longitude							float64
+	CurrentLapTime				uint16
+	BestLapTime						uint16
+	PbLapTime							uint16
+	PreviousLapTime				uint16
+}
 
 func ReadDataFromUdp() {
 	conn, err := net.ListenPacket("udp", udpAddress)
@@ -45,20 +56,29 @@ func ReadDataFromUdp() {
 				log.Fatal("Error reading from UDP:", err)
 		}
 
-		// packetId := binary.LittleEndian.Uint32(b[0:4])
-		rpm := binary.LittleEndian.Uint32(b[4:8])
-		speed := math.Float32frombits(binary.LittleEndian.Uint32(b[8:12]))
-		gear := binary.LittleEndian.Uint32(b[12:16])
-		tps := math.Float32frombits(binary.LittleEndian.Uint32(b[16:20]))
-		brake := math.Float32frombits(binary.LittleEndian.Uint32(b[20:24]))
 
-		frame660.Rpm = uint16(rpm)
-		frame660.Speed = uint16(speed)
-		frame660.Gear = uint8(gear)
+		// fmt.Println("PACKET id: ", binary.LittleEndian.Uint32(b[0:4]))
+		packetId := binary.LittleEndian.Uint32(b[0:4])
 
-		frame662.Tps = uint16(tps)
+		if (packetId == 1) {
+			rpm := binary.LittleEndian.Uint32(b[4:8])
+			speed := math.Float32frombits(binary.LittleEndian.Uint32(b[8:12]))
+			gear := binary.LittleEndian.Uint32(b[12:16])
+			tps := math.Float32frombits(binary.LittleEndian.Uint32(b[16:20]))
+			brake := math.Float32frombits(binary.LittleEndian.Uint32(b[20:24]))
 
-		frame667.Analog2 = uint16(brake)
+			frame660.Rpm = uint16(rpm)
+			frame660.Speed = uint16(speed)
+			frame660.Gear = uint8(gear)
+
+			frame662.Tps = uint16(tps)
+
+			frame667.Analog2 = uint16(brake)
+		} else if (packetId == 2) {
+			completedLaps := binary.LittleEndian.Uint32(b[4:8])
+
+			gpsState.LapCount = uint8(completedLaps)
+		}
 		
 		counter++
 	}
@@ -115,9 +135,21 @@ func SendDataToCan() {
 
 			_ = tx.TransmitFrame(context.Background(), f667)
 			// fmt.Println("Sent 667: ", f667)
+
+		// Temp just to see the value through to UI
+		case 4:
+			f111 := can.Frame {
+				ID: 111,
+				Length: 8,
+				Data: [8]byte { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 },
+			}
+			f111.Data[0] = gpsState.LapCount
+			
+			_ = tx.TransmitFrame(context.Background(), f111)
+			fmt.Println("Sent 111: ", f111)
 		}
 		
-		if (counter == 3) {
+		if (counter == 4) {
 			counter = 0
 		} else {
 			counter++
